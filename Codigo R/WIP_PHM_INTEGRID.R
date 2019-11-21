@@ -17,7 +17,7 @@
 verificar_packages <- function(){
   
   #carregar os packages que permitem ler, analisar e transformar dados respetivamente
-  Required_Packages=c("survival","survminer","MASS","compiler","ggfortify", "plyr", "dplyr", "readxl", "prodlim", "wesanderson","ggplot2","ggthemes","tcltk")
+  Required_Packages=c("survival","survminer","MASS","compiler","ggfortify", "plyr", "dplyr", "readxl", "prodlim", "wesanderson","ggplot2","ggthemes","tcltk","plotly")
   
   Remaining_Packages <- Required_Packages[!(Required_Packages %in% installed.packages()[,"Package"])];
   
@@ -72,8 +72,8 @@ process_data<- function(data){
 }
 
 #Function to build INESC TEC model (falta decidir os outputs que vamos guardar)!!!!!!!!
-call_INESC_TEC_algorithm<- function(data,confidence_level){
-  
+call_INESC_TEC_algorithm<- function(data,confidence_level,horizon){
+
   #Cox PHM model(output)
   phm <- coxph(Surv(Age, Failure) ~ District + Manufacturer + Installation_type + Technology, method="efron", data = data)
   
@@ -102,8 +102,27 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
   #Data to change baseline to fit the curve
   Wdata<- data.frame(cbind(ages, Sx))
 
-  #Weibull
-  fitWeib<-nls(Sx~exp(-(ages/a)^b),start=list(a=50,b=1),lower=c(.001,.001),algorithm = "port",trace=F,data=Wdata)
+  #fit Weibull curve
+  #starting parameters
+  start_a<-10
+  fitWeib<-0
+  exit<-0
+  
+  while(fitWeib==0){
+    try(fitWeib<-nls(Sx~exp(-(ages/a)^b),start=list(a=start_a,b=1),lower=c(.001,.001),algorithm = "port",trace=F,data=Wdata),silent = TRUE)
+    start_a<-start_a+10
+    if(is.list(fitWeib))break
+    if(start_a>=500){
+      print("Cannot obtain a continuous survivability curve with the provided data")
+      exit<-1
+      break
+    }
+  }
+  
+  #break algorithm in case of not being able to fit a continous curve to the provided data
+  if (exit==1) {
+    break
+  }
   
   #Estimate parameters
   #a is the scale parameter
@@ -130,11 +149,34 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
   #data frame of the theoretical curve
   baseline<-data.frame("PT Age"= newAges, "Survival probability"=newS0)
   
-  #baseline curve for all the equipment based on the provided data(output)
+  #baseline curve for all the equipment based on the provided data (output)
   baseline_plot<-ggplot(baseline) +
     geom_line(aes(x = PT.Age, y = Survival.probability)) + ggtitle("Baseline survival curve") + 
     xlab("PT age") + ylab("Survival probability (%)") +
     theme_bw() + ylim(0,1)
+  
+  #plotly version
+  plot_font <- list(
+    family = "Courier New, monospace",
+    size = 18,
+    color = "#7f7f7f"
+  )
+  plot_x_label <- list(
+    title = "PT age",
+    titlefont = plot_font
+  )
+  plot_y_label <- list(
+    title = "Survival probability (%)",
+    titlefont = plot_font
+  )
+  
+  p <- plot_ly(baseline, x = ~PT.Age, y = ~Survival.probability, colors = "Paired") %>%
+    add_lines()%>%
+    layout(title = "Baseline survival curve", xaxis = plot_x_label, yaxis = plot_y_label)
+  
+  #################################################################################################################################
+  ################################## Plots to study individual impact of each variable ############################################
+  #################################################################################################################################
   
   ########################################################Plots to study individual impact of each variable##########################################
   # Survival curve for each District<---------------------------->
@@ -176,6 +218,25 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
     xlab("PT age") + ylab("Survival probability (%)") +
     theme_bw() + ylim(0,1)+geom_line(aes(x = Age, y = Survival_probability, group = District, colour = District))+theme_economist()+ scale_fill_economist()
   
+  #plotly version
+  plot_font <- list(
+    family = "Courier New, monospace",
+    size = 18,
+    color = "#7f7f7f"
+  )
+  plot_x_label <- list(
+    title = "PT age",
+    titlefont = plot_font
+  )
+  plot_y_label <- list(
+    title = "Survival probability (%)",
+    titlefont = plot_font
+  )
+  
+  p <- plot_ly(plot_Sx_district, x = ~Age, y = ~Survival_probability, color = ~District, colors = "Paired") %>%
+    add_lines()%>%
+    layout(title = "Each District impact on the survival probability", xaxis = plot_x_label, yaxis = plot_y_label)
+    
   
   # Survival curves for each Installation type<---------------------------->
   #main variables for the plot
@@ -215,6 +276,25 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
     ggtitle("Each Installation type impact on the survival probability") + 
     xlab("PT age") + ylab("Survival probability (%)") +
     theme_bw() + ylim(0,1)+geom_line(aes(x = Age, y = Survival_probability, group = Installation_type, colour = Installation_type))+theme_economist()+ scale_fill_economist()
+  
+  #plotly version
+  plot_font <- list(
+    family = "Courier New, monospace",
+    size = 18,
+    color = "#7f7f7f"
+  )
+  plot_x_label <- list(
+    title = "PT age",
+    titlefont = plot_font
+  )
+  plot_y_label <- list(
+    title = "Survival probability (%)",
+    titlefont = plot_font
+  )
+  
+  p <- plot_ly(plot_Sx_Installation_type, x = ~Age, y = ~Survival_probability, color = ~Installation_type, colors = "Paired") %>%
+    add_lines()%>%
+    layout(title = "Each Installation type impact on the survival probability", xaxis = plot_x_label, yaxis = plot_y_label)
   
   
   # Survival curves for each available manufacturer<---------------------------->
@@ -256,6 +336,25 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
     xlab("PT age") + ylab("Survival probability (%)") +
     theme_bw() + ylim(0,1)+geom_line(aes(x = Age, y = Survival_probability, group = Manufacturer, colour = Manufacturer))+theme_economist()+ scale_fill_economist()
   
+  #plotly version
+  plot_font <- list(
+    family = "Courier New, monospace",
+    size = 18,
+    color = "#7f7f7f"
+  )
+  plot_x_label <- list(
+    title = "PT age",
+    titlefont = plot_font
+  )
+  plot_y_label <- list(
+    title = "Survival probability (%)",
+    titlefont = plot_font
+  )
+  
+  p <- plot_ly(plot_Sx_Manufacturer, x = ~Age, y = ~Survival_probability, color = ~Manufacturer, colors = "Paired") %>%
+    add_lines()%>%
+    layout(title = "Each Manufacturer impact on the survival probability", xaxis = plot_x_label, yaxis = plot_y_label)
+  
   # Survival curves for each available Technology<---------------------------->
   #main variables for the plot
   Sx_Technology<-array(data = NA, dim = nrow(baseline))
@@ -296,9 +395,29 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
     theme_bw() + ylim(0,1)+geom_line(aes(x = Age, y = Survival_probability, group = Technology, colour = Technology))+theme_economist()+ scale_fill_economist()
   
   
+  #plotly version
+  plot_font <- list(
+    family = "Courier New, monospace",
+    size = 18,
+    color = "#7f7f7f"
+  )
+  plot_x_label <- list(
+    title = "PT age",
+    titlefont = plot_font
+  )
+  plot_y_label <- list(
+    title = "Survival probability (%)",
+    titlefont = plot_font
+  )
+  
+  p <- plot_ly(plot_Sx_Technology, x = ~Age, y = ~Survival_probability, color = ~Technology, colors = "Paired") %>%
+    add_lines()%>%
+    layout(title = "Each Technology impact on the survival probability", xaxis = plot_x_label, yaxis = plot_y_label)
+  
   #################################################################################################################################
   ####################### Predict number of failures between Current year and Prediction year #####################################
   #################################################################################################################################
+  
   #Prediction horizon for the simulation
   horizon <- 3 #(input)
 
@@ -351,9 +470,11 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
   
   #Failure prediction for the specified horizon --> Total number of failures
   for(i in 1:numPT){ 
-      #update progress bar
-      setTkProgressBar(pb, i, label=paste( round(i/total*100, 0),"% completed"))
-      
+      #update progress bar at multiples of 1000
+      if(i%%1000==0 || i==numPT){
+        setTkProgressBar(pb, i, label=paste( round(i/total*100, 0),"% completed"))
+      }
+    
       p<-match(data$Age[i],newAges) #get position
       S1[i]<- newS0[p]^exp(coef_District[i] + coef_Installation_type[i] + coef_Manufacturer[i] + coef_Technology[i]) #PT survival in current year
       
@@ -386,10 +507,12 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
   pb_scenarios <- tkProgressBar(title = "Generating scenarios", min = 0, max = total, width = 300)
   
   # check if generated scenario coincides with calculated PF
-  
   for(a in 1:niter){
-    #update progress bar
-    setTkProgressBar(pb_scenarios, i, label=paste( round(i/total*100, 0),"% completed"))
+    
+    #update progress bar at multiples of 10
+    if(i%%10==0 || i==numPT){
+      setTkProgressBar(pb_scenarios, a, label=paste( round(a/niter*100, 0),"% completed"))
+    }
     
     #generating scenarions
     failures<-0
@@ -416,8 +539,6 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
   
   #Best scenario for the total number of failures(output)
   Best_case_scenario<-miu-qnorm(confidence_level,0,1)*sigma
-  
-  
 }
 
 #Test script
@@ -425,10 +546,10 @@ call_INESC_TEC_algorithm<- function(data,confidence_level){
 verificar_packages()
 
 #Load the data
-dados <- as.data.frame(read_xlsx("~/Desktop/Doutoramento DEGI/G-Candidaturas e Propostas/Projeito Europeu Integrid/Dados/DatasetComplete_AL_validar.xlsx",sheet="DB_with_names"))
+dados <- as.data.frame(read_xlsx("~/Desktop/Doutoramento DEGI/G-Candidaturas e Propostas/Projeto Europeu Integrid/Github/Dados/DatasetComplete_AL_validar.xlsx",sheet="DB_with_names"))
 data<-process_data(dados)
 #testar funcao main
-call_INESC_TEC_algorithm(data,0.95)
+call_INESC_TEC_algorithm(data,0.95,3)
 
 
 
