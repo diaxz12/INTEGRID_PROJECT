@@ -71,6 +71,75 @@ process_data<- function(data){
   return(data)
 }
 
+predict_failure<-function(transformer_data,baseline,algorithm_coefs){
+  
+  #exemplo ellevium (depois e preciso apagar)
+  transformer_data$`Manufacturing year`<-c(2012,1994,1980,1970,2010)
+  transformer_data$`Data-freeze year`<-c(2019,2019,2010,2005,2017)
+  transformer_data$District<-c("Aveiro","Braga","Coimbra","Guarda","Porto")
+  transformer_data$Manufacturer<-c("EFACEC","SIEMENS","EFACEC","SIEMENS","SIEMENS")
+  transformer_data$Installation_type<-c("WITHOUT BOOTH","WITH BOOTH","WITH BOOTH","WITHOUT BOOTH","WITHOUT BOOTH")
+  transformer_data$Technology<-c("ECONOMICAL","ROBUST","ROBUST","ROBUST","ECONOMICAL")
+
+  #main variables for the plot
+  Sx_predict<-array(data = NA, dim = nrow(baseline))
+  label_predict<-array(data = NA, dim = nrow(baseline))
+  Age_plot<-0
+  
+  for(i in 1:nrow(transformer_data)){
+    
+    #auxiliary variables
+    Sx_predict_aux<-array(data = NA, dim = nrow(baseline))
+    
+    #adjust baseline according to the provided transformer data
+    Sx_predict_aux <- baseline$Survival.probability^exp(algorithm_coefs[transformer_data$District[i]]+algorithm_coefs[transformer_data$Manufacturer[i]]+
+                                                          algorithm_coefs[transformer_data$Technology[i]]+algorithm_coefs[transformer_data$Installation_type[i]])
+    
+    #save the label
+    label_predict_aux<-array(data = i, dim = nrow(baseline))
+    if(i==1){
+      label_predict<-label_predict_aux
+      Sx_predict<-Sx_predict_aux
+      Age_plot<-seq(1,nrow(baseline))
+    }else{
+      label_predict<-c(label_predict,label_predict_aux)
+      Sx_predict<-c(Sx_predict,Sx_predict_aux)
+      Age_plot<-c(Age_plot,seq(1,nrow(baseline)))
+    }
+  }
+
+    # Survival curves for each District
+  plot_Sx_predict<-data.frame("Transformer"=as.factor(label_predict),"Age"=Age_plot,"Survival_probability"=Sx_predict)
+  
+  # plot results(output)
+  Transformer_plot<-ggplot(plot_Sx_predict) +
+    ggtitle("Transformer survival probability") + 
+    xlab("PT age") + ylab("Survival probability (%)") +
+    theme_bw() + ylim(0,1)+geom_line(aes(x = Age, y = Survival_probability, group = Transformer, colour = Transformer))+theme_economist()+ scale_fill_economist()
+  
+  #plotly version
+  plot_font <- list(
+    family = "Courier New, monospace",
+    size = 18,
+    color = "#7f7f7f"
+  )
+  plot_x_label <- list(
+    title = "PT age",
+    titlefont = plot_font
+  )
+  plot_y_label <- list(
+    title = "Survival probability (%)",
+    titlefont = plot_font
+  )
+  
+  p <- plot_ly(plot_Sx_predict, x = ~Age, y = ~Survival_probability, color = ~Transformer, colors = "Paired") %>%
+    add_lines()%>%
+    layout(title = "Transformer survival probability", xaxis = plot_x_label, yaxis = plot_y_label)
+  
+  return(plot_Sx_predict)
+}
+
+
 #Function to build INESC TEC model (falta decidir os outputs que vamos guardar)!!!!!!!!
 call_INESC_TEC_algorithm<- function(data,confidence_level,horizon){
 
@@ -80,6 +149,12 @@ call_INESC_TEC_algorithm<- function(data,confidence_level,horizon){
   #save variables coeficientes for future analysis(output)
   coefs<-summary(phm)
   coefs<-coefs$coefficients[1:nrow(coefs$coefficients),"coef"]
+  
+  #updata baseline values for the coefs array
+  coefs[paste0("District",unique(data$District)[which.min(order(unique(data$District)))])]<-0
+  coefs[paste0("Manufacturer",unique(data$Manufacturer)[which.min(order(unique(data$Manufacturer)))])]<-0
+  coefs[paste0("Installation_type",unique(data$Installation_type)[which.min(order(unique(data$Installation_type)))])]<-0
+  coefs[paste0("Technology",unique(data$Technology)[which.min(order(unique(data$Technology)))])]<-0
   
   ###############################################################################################################
   # Theoretical curve for all power transformers based on the available data
@@ -546,7 +621,7 @@ call_INESC_TEC_algorithm<- function(data,confidence_level,horizon){
 verificar_packages()
 
 #Load the data
-dados <- as.data.frame(read_xlsx("~/Desktop/Doutoramento DEGI/G-Candidaturas e Propostas/Projeto Europeu Integrid/Github/Dados/DatasetComplete_AL_validar.xlsx",sheet="DB_with_names"))
+dados <- as.data.frame(read_xlsx("~/Desktop/Doutoramento DEGI/G-Candidaturas e Propostas/Projeto Europeu Integrid/Github/Dados/DatasetComplete_Ellevium.xlsx",sheet="DB_with_names"))
 data<-process_data(dados)
 #testar funcao main
 call_INESC_TEC_algorithm(data,0.95,3)
